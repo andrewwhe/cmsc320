@@ -1,0 +1,199 @@
+---
+title: "CMSC320 Project 1"
+author: "Andrew He"
+date: "3/12/2016"
+output: html_document
+---
+
+# CMSC320 Project 1
+## Andrew He (112991500) 3/12/2016
+
+```{r, echo=FALSE, results="HIDE"}
+library(dplyr)
+library(RSQLite)
+library(ggplot2)
+library(Lahman)
+```
+
+### Problem 1
+_Using SQL compute a relation containing the total payroll and winning percentage (number of wins / number of games) for each team (that is, for each teamID and yearID combination). You should include other columns that will help when performing EDA later on (e.g., franchise ids, number of wins, number of games)._
+
+```{r}
+# Load the Teams and Salaries table
+teams_tab <- tbl_df(Teams)
+salaries_tab <- tbl_df(Salaries)
+
+# Create a new table to relate teamID, yearID, payroll, and winning percentage
+relate_tab <- select(teams_tab, yearID, teamID)
+
+# Obtain cumulative payroll for each team by year
+cum_salaries <- salaries_tab %>%
+  group_by(yearID, teamID) %>%
+  summarize(cum_salary = sum(salary))
+
+# Obtain win percentage for each team by year
+win_pctgs <- teams_tab %>%
+  group_by(yearID, teamID) %>%
+  summarize(win_pctg = (W*1.0 / G))
+
+# Join left (off of cum_salaries, because salaries data begins from 1985)
+relation_tab <- left_join(cum_salaries, win_pctgs)
+
+# Let's see if it worked!
+head(relation_tab)
+```
+
+### Problem 2
+_Write code to produce plots that illustrate the distribution of payrolls across time from 1990-2013._
+
+Observing average salary versus year:
+```{r}
+salaries_tab %>%
+  filter(yearID >= 1990, yearID <= 2013) %>%
+  group_by(yearID) %>%
+  summarize(avg_salary = mean(salary)) %>%
+  ggplot(aes(x=yearID, y=avg_salary)) + geom_point()
+```
+
+Observing distributions of salary each year:
+```{r}
+salaries_tab %>%
+  filter(yearID %in% c("1990", "1995", "2000", "2005", "2010", "2013")) %>%
+  mutate(scaled_salary = ((salary - mean(salary)) / sd(salary))) %>%
+  ggplot(aes(x=scaled_salary)) + facet_grid(.~yearID) + geom_histogram(binwidth=1)
+```
+
+#### Question 1
+_What statements can you make about the distribution of payrolls across time based on these plots? Remember you can make statements in terms of central tendency, spread, etc._
+
+1. Mean salary has increased over time. This makes economic sense.
+2. There are an increasing amount of players making significantly more than the average payroll. In 1990, there are no players making more than one standard deviation above the average. By 2010, there are players making 1, 2, 5, and even 8 standard deviations above the average.
+
+### Problem 3
+_Write code to produce plots that specifically show at least one of the statements you made in Question 1. For example, if you make a statement that there is a trend for payrolls to decrease over time, make a plot of a statistic for central tendency (e.g., mean payroll) vs. time to show that directly._
+
+```{r}
+salaries_tab %>%
+  filter(yearID >= 1990, yearID <= 2013) %>%
+  group_by(yearID) %>%
+  summarize(avg_salary = mean(salary)) %>%
+  ggplot(aes(x=yearID, y=avg_salary)) + geom_point() + geom_smooth(method=lm)
+```
+
+Mean salary has increased over the period 1990-2013.
+
+### Problem 4
+Write code to discretize year into five time periods (using the cut function with parameter breaks=5) and then make scatterplots showing mean winning percentage (y-axis) vs. mean payroll (x-axis) in each time period. You could add a regression line (using geom_smooth(method=lm)) in each scatter plot to ease interpretation.
+
+```{r}
+salaries_by_year_and_team <- salaries_tab %>%
+  group_by(yearID, teamID) %>%
+  summarize(avg_salary = mean(salary))
+
+win_by_year_and_team <- relation_tab %>%
+  group_by(yearID, teamID) %>%
+  summarize(win_pctg = mean(win_pctg))
+
+wins_salaries_tab <- left_join(salaries_by_year_and_team, win_by_year_and_team)
+
+cutting_factor <- cut(wins_salaries_tab$yearID, breaks = 5)
+
+classify <- function(yearID) {
+  if (yearID >= 1985 && yearID <= 1991) "(1985,1991]"
+  else if (yearID > 1991 && yearID <= 1996) "(1991,1996]"
+  else if (yearID > 1996 && yearID <= 2002) "(1996,2002]"
+  else if (yearID > 2002 && yearID <= 2007) "(2002,2007]"
+  else if (yearID > 2007 && yearID <= 2013) "(2007,2013]"
+}
+
+classified_years <- wins_salaries_tab %>%
+  mutate(yearID_discrete = classify(yearID))
+
+ggplot(classified_years, aes(x=avg_salary, y=win_pctg, label=teamID)) + geom_point() + geom_smooth(method=lm) + facet_grid(.~yearID_discrete)
+```
+
+#### Question 2
+_What can you say about team payrolls across these periods? Are there any teams that standout as being particularly good at paying for wins across these time periods? What can you say about the Oakland A’s spending efficiency across these time periods._
+
+Team payroll definitely increases with time. There are 2 teams in particular that win with astounding efficiency in the 1996-2001 time period, winning over 70% of games while not even being the highest spenders.
+
+For the Oakland A's:
+
+```{r}
+classified_years %>%
+  filter(teamID == "OAK") %>%
+  ggplot(aes(x=avg_salary, y=win_pctg, label=teamID)) + geom_point() + geom_smooth(method=lm) + facet_grid(.~yearID_discrete)
+```
+
+The Oakland A's seem to have been very efficient with spending money to win games in the 1997-2002 time period. There is a strong upward trend between average salary paid and winning percentage in this time period. Interestingly enough, right after, the 2003-2007 time period experienced the A's worst spending effiency performance with the strongest negative trend between spending additional money and winning additional games.
+
+### Problem 5
+_Write dplyr code to create a new variable in your dataset that standardizes payroll within each year. It will center and scale payrolls within each year by subtracting the average and dividing by the standard deviation of payroll for that year._
+
+```{r}
+team_payrolls <- salaries_tab %>%
+  group_by(yearID, teamID) %>%
+  summarize(team_payroll = sum(salary)) %>%
+  left_join(win_by_year_and_team)
+
+averaged_payrolls <- team_payrolls %>%
+  group_by(yearID) %>%
+  summarize(mean_payroll = mean(team_payroll), sd_payroll = sd(team_payroll))
+
+tstat <- left_join (team_payrolls, averaged_payrolls) %>%
+  mutate(std_payroll = ((team_payroll - mean_payroll) / sd_payroll))
+
+head(tstat)
+```
+
+### Problem 6
+_Repeat the same plots as Problem 4, but use this new standardized payroll variable._
+
+```{r}
+left_join(tstat, classified_years) %>%
+  ggplot(aes(x=std_payroll, y=win_pctg, label=teamID)) + geom_point() + geom_smooth(method=lm) + facet_grid(.~yearID_discrete)
+```
+
+#### Question 3
+_Answer Question 2 again, but based on these new plots._
+
+In the 2003-2007 time period it seems that there is a spike in aggressively excessive spending. Prior to 2003, there would generally not be any teams that would spend more than 2 standard deviations in player salaries for the time period. However, in 2003-2007 there are 5 teams that spend at least 2 standard deviations above the average. Each of these 5 teams post strong winrates, hovering around 60%. In the subsequent 2008-2013 time period, it can be seen that there are even more teams that spend more than 2 standard deviations above the average. However, it seems that these teams are less consistently successful at spending more to win more, as there is a team that spends 2 standard deviations above average but still only posts a 50% win rate. These observations paint a possible story: that in the 2003+ time period, a few teams begin to spend significantly more on their rosters and post excellent results. Over the following years in the 2008+ time period, other teams catch on to this and try to follow in this success by spending more themselves, but they do not experience the same level of success.
+
+### Problem 7
+_Make a single scatter plot of winning percentage (y-axis) vs. standardized payroll (x-axis). Add a regression line to highlight the relationship (again using geom_smooth(method=lm))._
+
+```{r}
+
+# Plots the winning percentage of every team (team/year combination) versus its payroll standardized for the year.
+ggplot(tstat, aes(x=std_payroll, y=win_pctg)) + geom_point() + geom_smooth(method=lm)
+```
+
+### Problem 8
+_Write dplyr code to calculate spending efficiency for each team i in year j._
+
+```{r}
+tstat_efficiency <- tstat %>%
+  mutate(expected_win_pctg = 0.5 + (0.025 * std_payroll)) %>%
+  mutate(efficiency = win_pctg - expected_win_pctg)
+
+tstat_efficiency %>%
+  select(yearID, teamID, efficiency) %>%
+  head()
+```
+
+_Make a line plot with year on the x-axis and efficiency on the y-axis. A good set of teams to plot are Oakland, the New York Yankees, Boston, Atlanta and Tampa Bay (teamIDs OAK, BOS, NYA, ATL, TBA). That plot can be hard to read since there is so much year to year variation for each team. One way to improve it is to use geom_smooth instead of geom_line._
+
+```{r}
+tstat_efficiency %>%
+  filter(teamID %in% c("OAK", "BOS", "NYA", "ATL", "TBA")) %>%
+  ggplot(aes(x=yearID, y=efficiency)) + geom_point() + geom_smooth(method=lm) + facet_grid(.~teamID)
+```
+
+#### Question 4
+_What can you learn from this plot compared to the set of plots you looked at in Question 2 and 3?_
+
+From these graphs we can see how spending efficiency is different among the different teams across time. We can see that among all of the observed teams that spending efficiency generally has increased over time. While at first glance this may agree with the idea that the transition of player-picking to a more modern statistical approach has made teams more spending-efficient, it should be noted that despite the overall upward trend in spending efficiency from 1985 to 2013, there is no observable spike in increased spending efficiency in 2002-2004.
+
+From these graphs we can also see some interesting patterns in the efficiencies of particular teams over time. TBA is interesting in its improvement over time, going from negative spending efficiency prior to 2006 to consistently positive efficiences after and having a sharply steep upward regression line. ATL is interesting because of how consistently it performs with positive spending efficiencies, particularly after 1990 (ATL spends with negative efficiency only two years after 1990). The sharpness of the divide between pre- and post-1990 ATL suggests some serious change to the team happened around that time.
+
+It is interesting that even after the Oakland A's famous transition to a modern statisticaly analysis for player-picking, the trend of their spending efficiency over time does not observably deviate from what it was before. They do, however, have a pair of exceptionally efficient spending years in the early 2000's. These could possibly be related to the Oakland A's having some remarkable efficient years at the beginning of their statistically-driven player-picking model, and their resulting success gave them more money and more room to be less spending-efficient.

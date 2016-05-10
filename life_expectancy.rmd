@@ -1,0 +1,210 @@
+---
+title: "project2"
+author: "Andrew He"
+date: "4/5/2016"
+output: pdf_document
+---
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(cache=FALSE)
+```
+
+In this part of this project you will practice and experiment with linear regression using
+data from [gapminder.org](http://gapminder.org). I recommend spending a little time looking at material there, it is quite an informative site.
+
+We will use a subset of data provided by gapminder provided by [Jennifer Bryan](http://www.stat.ubc.ca/~jenny/) described in it's [github page](https://github.com/jennybc/gapminder).
+
+The following commands load the dataset
+
+```{r}
+library(ISLR)
+library(dplyr)
+library(broom)
+library(ggplot2)
+library(gapminder)
+data(gapminder)
+
+head(gapminder)
+```
+
+For this exercise you will explore how life expectancy has changed over 50 years across the world, and how economic measures like gross domestic product (GDP) are related to it.
+
+**Exercise 1**: Make a scatter plot of life expectancy across time.
+
+```{r}
+gapminder %>%
+  ggplot(aes(x=year, y=lifeExp)) + geom_point()
+```
+
+**Question 1**: Is there a general trend (e.g., increasing or decreasing) for life expectancy across time? Is this trend linear? (answering this qualitatively from the plot, you will do a statistical analysis of this question shortly)
+
+From solely visual, qualitative observation, there appears to be a general, linear, positive trend for life expectancy across time.
+
+A slightly different way of making the same plot is looking at the distribution of life expectancy across countries as it changes over time:
+
+```{r, fig.width=12}
+library(dplyr)
+library(ggplot2)
+
+gapminder %>%
+  ggplot(aes(x=factor(year), y=lifeExp)) +
+    geom_violin() +
+    labs(title="Life expectancy over time",
+         x = "year",
+         y = "life expectancy")
+```
+
+This type of plot is called a _violin plot_, and it displays the distribution of the variable in the y-axis for each value of the variable in the x-axis.
+
+**Question 2**: How would you describe the distribution of life expectancy across countries for individual years? Is it skewed, or not? Unimodal or not? Symmetric around it's center?
+
+Across time the distribution of life expectancy goes from bottom-heavy to top-heavy. In 1952, the distribution is most heavily concentrated in its lower half; by the year 1997 and on, the distribution is heavily concentrated around the top. In the middle years 1962 through 1972, it is less clear where the mode is; these two years appear to be bimodal, whereas the rest of the years are unimodal. We can say that in 1992 and 1997 there is a skew caused by very obvious outliers (represented visually in these violin plots as the "tails"). 
+
+Based on this plot, consider the following questions.
+
+**Question 3**: Suppose I fit a linear regression model of life expectancy vs. year (treating it as a continuous variable), and test for a relationship between year and life expectancy, will you reject the null hypothesis of no relationship? (do this without fitting the model yet. I am testing your intuition.)
+
+Intuitively and visually it looks like there very likely is a strong relationship in this sample. It seems unlikely that this large sample could have been obtained given that the null hypothesis was true, so I would reject the null hypothesis.
+
+**Question 4**: What would a violin plot of residuals from the linear model in Question 3 vs. year look like? (Again, do this without code, answer this intuitively)
+
+I would expect the points of the residuals graph to also be linear because I expect there to be a linear relationship between life expectancy and year.
+
+**Question 5**: According to the assumptions of the linear regression model, what **should** that violin plot look like?
+
+When a linear model is fitted to data which has a linear relationship, the plot of the residuals should be centered around 0.
+
+**Exercise 2**: Fit a linear regression model using the `lm` function for life expectancy vs. year (as a continuous variable). Use the `tidy` function in the `broom` package to look at the resulting model.
+
+```{r}
+gapminder %>%
+  ggplot(aes(x=year, y=lifeExp)) + geom_point() + geom_smooth(method=lm)
+
+exp_fit <- lm(year~lifeExp, data=gapminder)
+exp_fit_stats <- exp_fit %>%
+  tidy()
+
+exp_fit_stats
+```
+
+**Question 6**: On average, by how much does life expectancy increase every year around the world?
+
+On average, life expectancy increases by 0.5822489 years every year across the world.
+
+**Question 7**: Do you reject the null hypothesis of no relationship between year and life expectancy? Why?
+
+We reject the null hypothesis because the p-value is ridiculously small (7.546795e-80). The p-value represents the probability that we observed our sample results given that the null hypothesis is true (that there is no relationship between year and life expectancy). This is so small, that we reject this hypothesis.
+
+**Exercise 3**: Make a violin plot of residuals vs. year for the linear model from Exercise 2 (use the `augment` function).
+
+```{r}
+augmented_exp <- exp_fit %>%
+  augment()
+
+augmented_exp %>%
+  ggplot(aes(x=factor(year), y=.resid)) +
+    geom_violin() +
+    labs(title="Residuals over time",
+         x = "year",
+         y = "residual")
+  
+```
+
+**Question 8**: Does it match your expectations (Question 4)?
+
+Yes; I expected the results to be clustered around 0, which they are. Small, zero-centered residuals are indicative of a well-fitted model.
+
+**Exercise 4**: Make a boxplot (or violin plot) of model residuals vs. continent.
+
+```{r}
+lm(year~continent, data=gapminder) %>%
+  augment() %>%
+  ggplot(aes(x=factor(continent), y=.resid)) +
+    geom_boxplot() +
+    labs(title="Residuals vs. continents",
+         x = "continent",
+         y = "residual")
+```
+
+**Question 9**: Is there a dependence between model residual and continent? If so, what would that suggest when performing a regression analysis of life expectancy across time?
+
+No. Our inference is valid because the residuals are independent and identically distributed. Because there is no trend or variation in residuals as a function of continent (they are the same for each continent), we know the residuals to be independent.
+
+**Exercise 5**: Use `geom_smooth(method=lm)` in ggplot as part of a scatter plot of life expectancy vs. year, grouped by continent (e.g., using the `color` aesthetic mapping).
+
+```{r}
+gapminder %>%
+  ggplot(aes(x=year, y=lifeExp, color=continent)) + geom_point() + geom_smooth(method=lm)
+```
+
+**Question 10**: Based on this plot, should your regression model include an interaction term for continent **and** year? Why?
+
+Yes; clearly the coefficients for the linear models for each continent are not all the same. For example, the regression line for Asian is visibly more steep than that of Africa. Clearly we should incorporate an interaction term for continent and year in order to account for the differences among continents and fit a more accurate model.
+
+**Exercise 6**: Fit a linear regression model for life expectancy including a term for an interaction between continent and year. Use the `summary` function to show the resulting model.
+
+```{r}
+exp_fit_int <- lm(lifeExp~continent*year, data=gapminder)
+summary(exp_fit_int)
+```
+
+**Question 11**: Are all parameters in the model significantly different from zero? If not, which are not significantly different from zero?
+
+All of the parameters in the model are very close to 0.
+
+**Question 12**: On average, by how much does life expectancy increase each year for each  continent? (Write code to answer this question by extracting relevant estimates from model fit)
+
+```{r}
+# Extract the coefficients
+exp_matrix <- summary(exp_fit_int)$coefficients
+yr <- exp_matrix["year","Estimate"]
+am <- exp_matrix["continentAmericas:year","Estimate"]
+as <- exp_matrix["continentAsia:year","Estimate"]
+eu <- exp_matrix["continentEurope:year","Estimate"]
+oc <- exp_matrix["continentOceania:year","Estimate"]
+
+# Construct a frame mapping continents to combined coefficients
+year_cont_exp <- data.frame(c("Americas", "Asia", "Europe", "Oceania"),
+                            c(yr+am, yr+as, yr+eu, yr+oc))
+names(year_cont_exp) <- c("continent", "expectancy_per_year")
+
+# Display the increase in expectancy per year
+year_cont_exp %>% head()
+```
+
+**Exercise 7**: You can use the `anova` function to perform an F-test that compares how well two models fit your data. Use it to compare the linear regression models from Exercise 2 (only including year as a covariate) and Exercise 6 (including interaction between year and continent).
+
+```{r}
+anova(exp_fit)
+anova(exp_fit_int)
+```
+
+**Question 13**: Is the interaction model significantly better than the year-only model? Why?
+
+The square sum of the residuals for the year-only model is 411,320; the square sum of residuals for the interaction model is much less, 87,320. If we interpret this in the context of the data we know this to make sense because the different continents are improving in quality of life, and thus life expectancy, at different rates. For example, Asia has rapidly been improving in quality of life (China and India), whereas countries that have historically had high quality of life (Americas, Europe) are not increasing so rapidly. By creating an interaction between contienent and year we are able to more accurately model life expectancy.
+
+**Exercise 8**: Make a residuals vs. year violin plot for the interaction model. Comment on how well it matches assumptions of the linear regression model. Do the same for a residuals vs. fitted values model. (Note, you can get fitted values using the `fitted` function on the object returned by `lm`).
+
+```{r}
+exp_fit_int %>%
+  augment() %>%
+  ggplot(aes(x=factor(year), y=.resid)) +
+    geom_violin() +
+    labs(title="Residuals vs. year, interaction model",
+         x = "continent",
+         y = "residual")
+```
+
+The residuals are zero-centered and so match the assumptions of the linear regression model well.
+
+```{r}
+exp_fit_int %>%
+  augment() %>%
+  ggplot(aes(x=factor(.fitted), y=.resid)) +
+    geom_violin() +
+    labs(title="Residuals vs. fitted values, interaction model",
+         x = "continent",
+         y = "residual")
+```
+
+Again, the residuals are zero-centered and so match the assumptions of the linear regression model well.
